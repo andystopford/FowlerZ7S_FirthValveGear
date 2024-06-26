@@ -69,27 +69,27 @@ class ControlPanel(QDialog):
 
         # File name input
         self.output_file_input = QLineEdit(self)
-        self.output_file_input.setText("Enter file Name Here")
+        self.output_file_input.setText("Test")
         self.output_file_input.setGeometry(QtCore.QRect(100, 145, 205, 25))
 
         # radius link angle inputs
         self.fwd_angle = ''
         self.fwd_angle_input = QLineEdit(self)
-        self.fwd_angle_input.setText('60')
+        self.fwd_angle_input.setText('75')
         self.fwd_angle_input.setGeometry(100, 175, 50, 25)
         self.fwd_angle = self.fwd_angle_input.text()
         self.fwd_angle_input.textChanged[str].connect(self.set_fwd)
 
         self.mid_angle = ''
         self.mid_angle_input = QLineEdit(self)
-        self.mid_angle_input.setText('80')
+        self.mid_angle_input.setText('90')
         self.mid_angle_input.setGeometry(180, 175, 50, 25)
         self.mid_angle = self.mid_angle_input.text()
         self.mid_angle_input.textChanged[str].connect(self.set_mid)
 
         self.rev_angle = ''
         self.rev_angle_input = QLineEdit(self)
-        self.rev_angle_input.setText('100')
+        self.rev_angle_input.setText('115')
         self.rev_angle_input.setGeometry(250, 175, 50, 25)
         self.rev_angle = self.rev_angle_input.text()
         self.rev_angle_input.textChanged[str].connect(self.set_rev)
@@ -106,10 +106,11 @@ class ControlPanel(QDialog):
         self.show()
 
     def test(self):
-        sk = App.ActiveDocument.getObject('Sketch004')
         try:
-            sk.setDatum('Cutoff CTRL',
-                        App.Units.Quantity(str(int(45)) + ' deg'))
+            for angle in range(0, 370, 10):
+                self.actuator.Angle = angle
+                Gui.runCommand("asm3CmdQuickSolve", 0)
+                time.sleep(1)
         except:
             print('test failed')
 
@@ -172,29 +173,34 @@ class ControlPanel(QDialog):
         Gui.runCommand("asm3CmdQuickSolve", 0)
 
     def run(self):
-        print("Run")
+        print("RUN")
         crank_angles = []
         piston_posns = []
         fwd_posns = []
         mid_posns = []
         rev_posns = []
-        cutoffs = [[self.fwd_angle, fwd_posns], [self.mid_angle, mid_posns],
-                   [self.rev_angle, rev_posns]]
+        ecc_fwd = ['']
+        ecc_mid = ['']
+        ecc_rev = ['']
+        cutoffs = [[self.fwd_angle, fwd_posns, ecc_fwd], [self.mid_angle,
+                                                          mid_posns, ecc_mid],
+                   [self.rev_angle, rev_posns, ecc_rev]]
         for angle in range(0, 370, 10):
             crank_angles.append(angle)
         piston_posns = self.get_piston_positions(piston_posns)
         try:
             for cutoff in cutoffs:
-                print('setting cutoff')
+                #print('SETTING CUTOFF')
                 self.set_cutoff(cutoff[0])
-                print('using cutoff')
-                self.use_selected_cutoff(cutoff[1])
-            #print(piston_posns, fwd_posns, mid_posns, rev_posns)
+                #print('USING CUTOFF')
+                self.use_selected_cutoff(cutoff[1], cutoff[2])
+                #print('CUTOFF LINE 199', cutoff[2])
             posns = zip(crank_angles, piston_posns, fwd_posns, mid_posns,
-                        rev_posns)
+                        rev_posns, ecc_fwd, ecc_mid, ecc_rev)
+            #print('POSNS', posns)
             self.write_file(posns)
         except:
-            print('run failed')
+            print('RUN FAILED')
 
     def get_piston_positions(self, posns):
         """
@@ -212,10 +218,11 @@ class ControlPanel(QDialog):
             print("get_piston_positions failed")
         return posns
 
-    def use_selected_cutoff(self, posns):
+    def use_selected_cutoff(self, posns, eccs):
         """
-        Gets valve positions for the selected cutoff
-        :param posns: Position list
+        Gets valve and eccentric rod end positions for the selected cutoff
+        :param posns: Valve position list for the selected cutoff, eccs:
+        eccentric rod end position list
         :return: valve positions
         """
         try:
@@ -225,22 +232,33 @@ class ControlPanel(QDialog):
                 self.actuator.Angle = angle
                 Gui.runCommand("asm3CmdQuickSolve", 0)
                 vpos = App.ActiveDocument.Constraint020.Label2
+                eccpos_x = App.ActiveDocument.Constraint021.Label2
+                eccpos_z = App.ActiveDocument.Constraint022.Label2
+                eccpos = [eccpos_z, eccpos_x]
                 posns.append(vpos)
+                eccs.append(eccpos)
         except:
-            print("Run() exception")
-        return posns
+            print("RUN() EXCEPTION")
+        return posns, eccs
 
     def set_cutoff(self, angle):
-        print('set_cutoff entered', angle)
+        print('SET_CUTOFF ENTERED', angle)
         try:
-            print('trying')
+            print('TRYING')
             App.ActiveDocument.getObject('Sketch004').\
                 setDatum(5, App.Units.Quantity(angle + ' deg'))
             App.ActiveDocument.recompute()
-            print('set_cutoff', App.ActiveDocument.getObject('Sketch004').
-                  getDatum(5, App.Units.Quantity))
+            #print('SET CUTOFF', App.ActiveDocument.getObject('Sketch004').
+            #      getDatum(5, App.Units.Quantity))
         except:
-            print('Setting cutoff failed')
+            print('SETTING CUTOFF FAILED - TRYING AGAIN')
+            try:
+                print('TRYING')
+                App.ActiveDocument.getObject('Sketch004'). \
+                    setDatum(5, App.Units.Quantity(angle + ' deg'))
+                App.ActiveDocument.recompute()
+            except:
+                print('SETTING CUTOFF FAILED')
 
     def get_current_positions(self):
         """Get distance (vpos) of valve mid point from cylinder mid point at
@@ -253,7 +271,7 @@ class ControlPanel(QDialog):
             vpos = App.ActiveDocument.Constraint020.Label2
             return cpos, ppos, vpos
         except:
-            print("bollox - get_valve_pos()")
+            print("exception - get_valve_pos()")
             # return 0, 0, 0
 
     def write_file(self, posns):
