@@ -1,16 +1,20 @@
 #!/usr/bin/python3.6
+import itertools
+
 from PyQt5 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
 import csv
 import sys  # We need sys so that we can pass argv to QApplication
 import os
+import shutil
 from pathlib import Path
 import ast
 import numpy as np
 from sklearn import preprocessing
 from scipy.interpolate import make_interp_spline
-from scipy.signal import find_peaks
+#from scipy.signal import find_peaks
 from InspectorLine import InspectorLine
+from InspectorLine_y import InspectorLine_y
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -21,8 +25,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.file = ''
         self.open_file()
         self.setMinimumWidth(1800)
-        self.setMinimumHeight(600)
-        layout = QtWidgets.QHBoxLayout()
+        self.setMinimumHeight(1000)
+        layout = QtWidgets.QGridLayout()
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
         self.setCentralWidget(widget)
@@ -57,11 +61,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self.inspector3 = InspectorLine()
         self.inspector3.attachToPlotItem(self.graphWidget_1.getPlotItem())
 
-        layout.addWidget(self.graphWidget)
-        layout.addWidget(self.graphWidget_1)
+        # Elliptical plot
+        # Plot eccentric rod end path
+        self.graphWidget_2 = pg.PlotWidget()
+        self.graphWidget_2.setBackground(colour)
+        self.graphWidget_2.setTitle("Valve Opening", color='w',
+                                    size='15pt')
+        styles = {'color': (255, 255, 255), 'font-size': '20px'}
+        self.graphWidget_2.addLegend(offset=(1, 0))
+        self.graphWidget_2.showGrid(x=True, y=True)
+        # self.graphWidget_2.setAspectLocked()
+        self.inspector4 = InspectorLine_y()
+        self.inspector4.attachToPlotItem(self.graphWidget_2.getPlotItem())
+        self.inspector4.setPos(2)
+        self.inspector5 = InspectorLine_y()
+        self.inspector5.attachToPlotItem(self.graphWidget_2.getPlotItem())
+        self.inspector5.setPos(-2)
+
+        layout.addWidget(self.graphWidget, 0, 0)
+        layout.addWidget(self.graphWidget_1, 0, 1)
+        layout.addWidget(self.graphWidget_2, 1, 0)
 
         self.get_curves()
         self.get_path()
+
+        print(self.rect())
+        image = self.grab(self.rect())
+        image.save(self.directory + "/Screenshots/" + fname + ".png")
 
     def open_file(self):
         dialog = QtWidgets.QFileDialog()
@@ -70,13 +96,54 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog.setNameFilter("Text files (*.csv)")
         if dialog.exec_():
             self.file = dialog.selectedFiles()[0]
+            self.fix_file(self.file)
+
+    def fix_file(self, file):
+        """
+        Bodge to fix empty fields in first row of .csv from
+        FirthValveGearController.py
+        :param file:
+        :return:
+        """
+        in_file = file
+        out_file = 'out.csv'
+        temp_file = '_temp.csv'
+        shutil.copy(in_file, out_file)
+        with open(in_file, "r", newline='') as f_input, \
+                open(out_file, "a", newline='') as f_output, \
+                open(temp_file, "w", newline='') as f_temp:
+            reader = csv.reader(f_input)
+            #row_count = sum(1 for row in reader)
+            #print("ROW COUNT", row_count)
+
+        with open(out_file, 'r', newline='') as out, open(temp_file, "a",
+                                                          newline='') as temp:
+            reader = csv.reader(out)
+            writer = csv.writer(temp, quoting=csv.QUOTE_NONNUMERIC)
+            for row in reader:
+                print("OUT", row)
+                if row[0] == '360':
+                    # Write last row to beginning of temp_file
+                    row[0] = '0'
+                    writer.writerow(row)
+
+        with open(out_file, 'r', newline='') as out, open(temp_file, "a",
+                                                          newline='') as temp:
+            reader = csv.reader(out)
+            writer = csv.writer(temp, quoting=csv.QUOTE_NONNUMERIC)
+            for row in reader:
+                if row[0] != '0':
+                    writer.writerow(row)
+
+        os.remove(in_file)
+        os.rename(temp_file, in_file)
 
     def get_path(self):
         """
         Gets the path coordinates for the eccentric rod rocking lever end and
         plots them for each cutoff setting.'z' and 'x' refer to FreeCAD's
         coordinate system, and are plotted as x and y respectively.
-        n.b.Currently the FreeCAD macro fails to output the first line (0
+        n.b. Currently, the FreeCAD macro fails to output the first line (0
         degrees) of coordinates to the .csv file, so these need to be
         copy-pasted from the last line (360 degrees), which is, of course, the
         same.
@@ -127,7 +194,7 @@ class MainWindow(QtWidgets.QMainWindow):
         with open(self.file) as csv_file:
             csv_reader = csv.reader(csv_file, quoting=csv.QUOTE_NONNUMERIC)
             for row in csv_reader:
-                crank_ang = row[0]
+                crank_ang = int(row[0])
                 crank_angle.append(crank_ang)
                 piston_pos = row[1]
                 piston_pos = piston_pos[:-3]
@@ -144,16 +211,37 @@ class MainWindow(QtWidgets.QMainWindow):
                 rev_pos = rev_pos[:-3]
                 rev_pos = self.centre_positions(float(rev_pos))
                 cutoff_rev.append(rev_pos)
-        piston = self.normalize_position_data(piston)
-        piston = self.smooth_curves(crank_angle, piston)
+        piston_crv = self.normalize_position_data(piston)
+        piston_crv = self.smooth_curves(crank_angle, piston_crv)
         fwd = self.smooth_curves(crank_angle, cutoff_fwd)
         mid = self.smooth_curves(crank_angle, cutoff_mid)
         rev = self.smooth_curves(crank_angle, cutoff_rev)
 
-        self.plot(self.graphWidget, piston[0], piston[1], "Piston Pos", 'w', 2)
+        ports = self.get_valve_openings(piston, cutoff_fwd, cutoff_mid,
+                                        cutoff_rev)
+
+        self.plot(self.graphWidget, piston_crv[0], piston_crv[1], "Piston Pos",
+                  'w', 2)
         self.plot(self.graphWidget, fwd[0], fwd[1], "Valve Pos Fwd", 'r', 2)
         self.plot(self.graphWidget, mid[0], mid[1], "Valve Pos Mid", 'b', 2)
         self.plot(self.graphWidget, rev[0], rev[1], "Valve Pos Rev", 'g', 2)
+        self.plot(self.graphWidget_2, ports[0], ports[1], "Fwd", 'r', 2)
+        self.plot(self.graphWidget_2, ports[0], ports[2], "Mid", 'b', 2)
+        self.plot(self.graphWidget_2, ports[0], ports[3], "Rev", 'g', 2)
+
+    def get_valve_openings(self, piston, fwd, mid, rev):
+        """
+        Plot piston posn in x against valve opening in y
+
+        :return:
+        """
+        p = []
+        f = []
+        for pos in piston:
+            pos = float(pos)
+            pos = pos - 30
+            p.append(pos)
+        return p, fwd, mid, rev
 
     @staticmethod
     def smooth_curves(x_val, y_val):
@@ -206,4 +294,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

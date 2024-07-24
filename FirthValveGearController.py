@@ -11,6 +11,7 @@ class ControlPanel(QDialog):
     """
     docstring for ControlPanel.
     """
+
     def __init__(self, document, actuator):
         super(ControlPanel, self).__init__()
         self.doc = document
@@ -23,7 +24,7 @@ class ControlPanel(QDialog):
         self.unit_suffix = (" °")
         self.result = ""
         self.setMaximumWidth(400)
-        #self.setMaximumHeight(200)
+        # self.setMaximumHeight(200)
         self.setMinimumWidth(400)
         self.setMinimumHeight(200)
         self.setWindowTitle("Firth Valve Gear")
@@ -45,7 +46,7 @@ class ControlPanel(QDialog):
         self.label_current.setText(str(round(self.current_value, 1)) +
                                    self.unit_suffix)
         self.label_current.setGeometry(QtCore.QRect(175, 30, 50, 25))
-        
+
         # Jog buttons
         self.button_jog_back = QPushButton('<', self)
         self.button_jog_back.setGeometry(QtCore.QRect(35, 65, 60, 25))
@@ -64,7 +65,7 @@ class ControlPanel(QDialog):
         # Cutoff setting
         self.cutoff_ctrl = QLineEdit(self)
         self.cutoff_ctrl.setGeometry(170, 105, 50, 25)
-        self.cutoff_ctrl.returnPressed.connect\
+        self.cutoff_ctrl.returnPressed.connect \
             (lambda: self.set_cutoff(int(self.cutoff_ctrl.text())))
 
         # File name input
@@ -182,22 +183,22 @@ class ControlPanel(QDialog):
         ecc_fwd = ['']
         ecc_mid = ['']
         ecc_rev = ['']
-        cutoffs = [[self.fwd_angle, fwd_posns, ecc_fwd], [self.mid_angle,
-                                                          mid_posns, ecc_mid],
+        cutoffs = [[self.fwd_angle, fwd_posns, ecc_fwd],
+                   [self.mid_angle, mid_posns, ecc_mid],
                    [self.rev_angle, rev_posns, ecc_rev]]
         for angle in range(0, 370, 10):
             crank_angles.append(angle)
         piston_posns = self.get_piston_positions(piston_posns)
+        print("TRYING CUTOFF AT ANGLE", angle)
         try:
             for cutoff in cutoffs:
-                #print('SETTING CUTOFF')
+                # print('SETTING CUTOFF')
                 self.set_cutoff(cutoff[0])
-                #print('USING CUTOFF')
+                print('USING CUTOFF', cutoff)
                 self.use_selected_cutoff(cutoff[1], cutoff[2])
-                #print('CUTOFF LINE 199', cutoff[2])
+                # print('CUTOFF LINE 199', cutoff[2])
             posns = zip(crank_angles, piston_posns, fwd_posns, mid_posns,
                         rev_posns, ecc_fwd, ecc_mid, ecc_rev)
-            #print('POSNS', posns)
             self.write_file(posns)
         except:
             print('RUN FAILED')
@@ -235,6 +236,8 @@ class ControlPanel(QDialog):
                 eccpos_x = App.ActiveDocument.Constraint021.Label2
                 eccpos_z = App.ActiveDocument.Constraint022.Label2
                 eccpos = [eccpos_z, eccpos_x]
+                # print("ANGLE", angle)
+                # print("ECCENTRIC POSNS", vpos, eccpos)
                 posns.append(vpos)
                 eccs.append(eccpos)
         except:
@@ -244,14 +247,14 @@ class ControlPanel(QDialog):
     def set_cutoff(self, angle):
         print('SET_CUTOFF ENTERED', angle)
         try:
-            print('TRYING')
-            App.ActiveDocument.getObject('Sketch004').\
+            # print('TRYING')
+            App.ActiveDocument.getObject('Sketch004'). \
                 setDatum(5, App.Units.Quantity(angle + ' deg'))
             App.ActiveDocument.recompute()
-            #print('SET CUTOFF', App.ActiveDocument.getObject('Sketch004').
+            # print('SET CUTOFF', App.ActiveDocument.getObject('Sketch004').
             #      getDatum(5, App.Units.Quantity))
         except:
-            print('SETTING CUTOFF FAILED - TRYING AGAIN')
+            print('SETTING CUTOFF FAILED - TRY AGAIN')
             try:
                 print('TRYING')
                 App.ActiveDocument.getObject('Sketch004'). \
@@ -271,18 +274,25 @@ class ControlPanel(QDialog):
             vpos = App.ActiveDocument.Constraint020.Label2
             return cpos, ppos, vpos
         except:
-            print("exception - get_valve_pos()")
+            print("exception - get_current_pos()")
             # return 0, 0, 0
 
     def write_file(self, posns):
+        """
+        n.b. Hard coded path
+        :param posns:
+        :return:
+        """
+        print("WRITING FILE", posns)
         fname = self.output_file_input.text()
-        f = '/home/andy_X/Projects/Mechanical/Z7S/ValveGear/Results/' + \
+        f = '/home/andy/Projects/Mechanical/Z7S/ValveGear/Results/' + \
             fname + '.csv'
         with open(f, 'w') as csv_file:
             writer = csv.writer(csv_file, quoting=csv.QUOTE_NONNUMERIC)
             print(writer)
             for row in posns:
                 writer.writerow(row)
+        print("FILE WRITTEN", f)
 
     def on_close(self):
         self.result = "Closed"
@@ -303,6 +313,7 @@ def main():
             panel_list.append(panel)
         panel.exec_()
 
+
 def findTheDrivingConstraints(document_object):
     # search through the Objects and find the driving constraint
     driver_list = []
@@ -311,6 +322,7 @@ def findTheDrivingConstraints(document_object):
             driving_constraint = each.Name
             driver_list.append(driving_constraint)
     return driver_list
+
 
 ###############################################################################
 
